@@ -206,15 +206,23 @@ export class TheWorldApp {
     
     async processSingleMessage(msgId) {
         try {
-            const messages = this.TavernHelper.getChatMessages(msgId, { "role": "all", "hide_state": "all", "include_swipes": false });
-            if (!messages || messages.length === 0 || messages[0].is_user) { return; }
+            const messages = this.TavernHelper.getChatMessages(msgId, { 
+                "role": "all", 
+                "hide_state":  "all", 
+                "include_swipes": false 
+            });
+            if (!messages || messages.length === 0) { return; }
 
             const msg = messages[0].message;
+            const isUserMessage = messages[0].is_user;
 
-            // Handle non-persistent ambient sound logic BEFORE processing new commands
-            this.audioManager.processMessage(msg);
+            // 🎭 用户消息（来自剧情推进系统）和AI消息都处理
+            // 但音频只在AI消息时触发（避免用户输入时播放音效）
+            if (!isUserMessage) {
+                this.audioManager.processMessage(msg);
+            }
             
-            // Execute audio and other FX commands
+            // 解析命令（用户和AI都支持）
             const commands = this.commandParser.parse(msg);
             if (commands.length > 0) {
                 this.commandProcessor.executeCommands(commands);
@@ -224,38 +232,34 @@ export class TheWorldApp {
             
             let updated = false;
 
-            // --- CORRECTED <MapUpdate> Handling ---
+            // 🗺️ MapUpdate 处理（用户和AI都支持）
             const mapUpdateMatch = sanitizedMes.match(this.config.MAP_UPDATE_TAG_REGEX);
             if (mapUpdateMatch) {
                 try {
                     const updateJson = JSON.parse(mapUpdateMatch[1]);
-                    this.logger.log('Parsed <MapUpdate> tag:', updateJson);
+                    this.logger.log(`[${isUserMessage ? 'User' : 'AI'}] Parsed <MapUpdate> tag:`, updateJson);
 
                     if (!this.mapSystem.mapDataManager.isInitialized()) {
                         let bookName = await this.mapSystem.lorebookManager.findBoundWorldbookName();
                         if (!bookName) {
-                            this.logger.log('No map worldbook found, creating one on-demand...');
                             bookName = await this.mapSystem.lorebookManager.createAndBindMapWorldbook();
                         }
-                        
                         if (bookName) {
                             await this.mapSystem.mapDataManager.initialize(bookName);
-                        } else {
-                            this.logger.error('Failed to find or create a map worldbook. Cannot process <MapUpdate>.');
                         }
                     }
 
                     if (this.mapSystem.mapDataManager.isInitialized()) {
                         await this.mapSystem.mapDataManager.processMapUpdate(updateJson);
-                        await this.mapSystem.atlasManager.updateAtlas(); // Update the Atlas after map changes
+                        await this.mapSystem.atlasManager.updateAtlas();
                         updated = true;
                     }
-
                 } catch (error) {
                     this.logger.error('Failed to parse or process <MapUpdate> tag:', error);
                 }
             }
             
+            // 🌍 WorldState 处理（用户和AI都支持）
             const worldStateMatch = sanitizedMes.match(this.config.WORLD_STATE_TAG_REGEX);
             if (worldStateMatch) {
                 const newWorldStateData = this.stateParser.parseWorldState(worldStateMatch[1]);
@@ -265,7 +269,7 @@ export class TheWorldApp {
                 Object.assign(TheWorldState.latestWorldStateData, newWorldStateData);
                 updated = true;
 
-                // NEW: Implicit Location Update Logic
+                // 隐式地点更新逻辑
                 const newLocationName = newWorldStateData['地点'];
                 const hasExplicitMoveCommand = commands.some(cmd => 
                     cmd.module === 'Map' && 
@@ -275,17 +279,16 @@ export class TheWorldApp {
 
                 if (newLocationName && !hasExplicitMoveCommand && this.mapSystem.mapDataManager.isInitialized()) {
                     const targetNode = this.mapSystem.mapDataManager.findNodeByIdOrName(newLocationName);
-                    if (targetNode && targetNode.id !== this.state.currentPlayerLocationId) {
-                        this.logger.log(`[WorldState] Implicitly updating player location to "${newLocationName}" (ID: ${targetNode.id})`);
+                    if (targetNode && targetNode.id !== TheWorldState.currentPlayerLocationId) {
+                        this.logger.log(`[${isUserMessage ? 'User' : 'AI'}] Implicitly updating player location to "${newLocationName}" (ID: ${targetNode.id})`);
                         await this.mapSystem.locatorManager.updateLocator(targetNode.id);
-                        // 'updated' is already true, so UI will refresh.
                     }
                 }
             }
 
             if (updated) {
                 this.dataManager.saveState();
-                this.logger.log(`[Processor] WorldState from message ${msgId} processed. Updating UI.`);
+                this.logger.log(`[Processor] ${isUserMessage ? 'User' : 'AI'} message ${msgId} processed. Updating UI.`);
                 if (this.globalThemeManager.isActive) this.globalThemeManager.updateTheme();
             }
             
