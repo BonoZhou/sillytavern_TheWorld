@@ -225,6 +225,7 @@ export class TheWorldApp {
             // 解析命令（用户和AI都支持）
             const commands = this.commandParser.parse(msg);
             if (commands.length > 0) {
+                this.logger.log(`[${isUserMessage ? 'User' : 'AI'}] Executing ${commands.length} command(s)`);
                 this.commandProcessor.executeCommands(commands);
             }
 
@@ -268,6 +269,8 @@ export class TheWorldApp {
                 }
                 Object.assign(TheWorldState.latestWorldStateData, newWorldStateData);
                 updated = true;
+
+                this.logger.log(`[${isUserMessage ? 'User' : 'AI'}] Updated WorldState:`, newWorldStateData);
 
                 // 隐式地点更新逻辑
                 const newLocationName = newWorldStateData['地点'];
