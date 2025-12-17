@@ -318,7 +318,7 @@ export class TheWorldApp {
 
         for (let i = 0; i < allMessages.length - 1; i++) {
             const message = allMessages[i];
-            if (message.is_user) continue;
+            // ✅ 不再跳过用户消息，用户消息（来自剧情推进系统）也会包含 WorldState
             
             const msg = message.message.replace(/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>/g, '');
             // NOTE: <MapUpdate> is not processed during recalculation to avoid re-processing persistent data.
